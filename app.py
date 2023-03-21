@@ -1,6 +1,6 @@
 import cv2
 import os
-from flask import Flask,request,render_template
+from flask import Flask, request, render_template, redirect
 from datetime import date
 from datetime import datetime
 import numpy as np
@@ -120,9 +120,8 @@ def start():
             break
     cap.release()
     cv2.destroyAllWindows()
-    names,rolls,times,l = extract_attendance()    
-    return render_template('home.html',names=names,rolls=rolls,times=times,l=l,totalreg=totalreg(),datetoday2=datetoday2) 
-
+    names,rolls,times,l = extract_attendance()
+    return redirect('/')
 
 #### This function will run when we add a new user
 @app.route('/add',methods=['GET','POST'])
@@ -155,8 +154,7 @@ def add():
     print('Training Model')
     train_model()
     names,rolls,times,l = extract_attendance()    
-    return render_template('home.html',names=names,rolls=rolls,times=times,l=l,totalreg=totalreg(),datetoday2=datetoday2) 
-
+    return redirect('/')
 
 #### Our main function which runs the Flask App
 if __name__ == '__main__':
