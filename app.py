@@ -7,20 +7,18 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 import pandas as pd
 import joblib
+import shutil
 
 #### Defining Flask App
 app = Flask(__name__)
-
 
 #### Saving Date today in 2 different formats
 datetoday = date.today().strftime("%m_%d_%y")
 datetoday2 = date.today().strftime("%d-%B-%Y")
 
-
 #### Initializing VideoCapture object to access WebCam
 face_detector = cv2.CascadeClassifier('static/haarcascade_frontalface_default.xml')
 cap = cv2.VideoCapture(0)
-
 
 #### If these directories don't exist, create them
 if not os.path.isdir('Attendance'):
@@ -28,8 +26,9 @@ if not os.path.isdir('Attendance'):
 if not os.path.isdir('static/faces'):
     os.makedirs('static/faces')
 if f'Attendance-{datetoday}.csv' not in os.listdir('Attendance'):
-    with open(f'Attendance/Attendance-{datetoday}.csv','w') as f:
+    with open(f'Attendance/Attendance-{datetoday}.csv', 'w') as f:
         f.write('Name,Roll,Time')
+        f.close()
 
 
 #### get a number of total registered users
@@ -63,8 +62,8 @@ def train_model():
             labels.append(user)
     faces = np.array(faces)
     knn = KNeighborsClassifier(n_neighbors=5)
-    knn.fit(faces,labels)
-    joblib.dump(knn,'static/face_recognition_model.pkl')
+    knn.fit(faces, labels)
+    joblib.dump(knn, 'static/face_recognition_model.pkl')
 
 
 #### Extract info from today's attendance file in attendance folder
@@ -74,18 +73,37 @@ def extract_attendance():
     rolls = df['Roll']
     times = df['Time']
     l = len(df)
-    return names,rolls,times,l
+    return names, rolls, times, l
 
+
+#### Delete Attendance of a particular day
+def delete_attendance():
+    with open(f'Attendance/Attendance-{datetoday}.csv', 'w') as f:
+        f.truncate()
+        f.write('Name,Roll,Time')
+        f.close()
+
+#### Delete All face data
+def delete_all_face():
+    root1 = "static"
+    root2 = "faces"
+    root_dir = f"{root1}\{root2}"
+    for dir_name in os.listdir(root_dir):
+        path = f"{root_dir}\{dir_name}"
+        shutil.rmtree(path, ignore_errors=True)
+    with open(f'static/face_recognition_model.pkl', 'wb') as f:
+        f.truncate()
+        f.close()
 
 #### Add Attendance of a specific user
 def add_attendance(name):
     username = name.split('_')[0]
     userid = name.split('_')[1]
     current_time = datetime.now().strftime("%H:%M:%S")
-    
+
     df = pd.read_csv(f'Attendance/Attendance-{datetoday}.csv')
     if int(userid) not in list(df['Roll']):
-        with open(f'Attendance/Attendance-{datetoday}.csv','a') as f:
+        with open(f'Attendance/Attendance-{datetoday}.csv', 'a') as f:
             f.write(f'\n{username},{userid},{current_time}')
 
 
@@ -94,67 +112,82 @@ def add_attendance(name):
 #### Our main page
 @app.route('/')
 def home():
-    names,rolls,times,l = extract_attendance()    
-    return render_template('home.html',names=names,rolls=rolls,times=times,l=l,totalreg=totalreg(),datetoday2=datetoday2) 
+    names, rolls, times, l = extract_attendance()
+    return render_template('home.html', names=names, rolls=rolls, times=times, l=l, totalreg=totalreg(),
+                           datetoday2=datetoday2)
 
 
 #### This function will run when we click on Take Attendance Button
-@app.route('/start',methods=['GET'])
+@app.route('/start', methods=['GET'])
 def start():
     if 'face_recognition_model.pkl' not in os.listdir('static'):
-        return render_template('home.html',totalreg=totalreg(),datetoday2=datetoday2,mess='There is no trained model in the static folder. Please add a new face to continue.') 
-
+        return redirect('/')
+    #    return render_template('home.html', totalreg=totalreg(), datetoday2=datetoday2, mess='There is no trained model in the static folder. Please add a new face to continue.')
+    if totalreg() == 0:
+        return redirect('/')
     cap = cv2.VideoCapture(0)
     ret = True
     while ret:
-        ret,frame = cap.read()
-        if extract_faces(frame)!=():
-            (x,y,w,h) = extract_faces(frame)[0]
-            cv2.rectangle(frame,(x, y), (x+w, y+h), (255, 0, 20), 2)
-            face = cv2.resize(frame[y:y+h,x:x+w], (50, 50))
-            identified_person = identify_face(face.reshape(1,-1))[0]
+        ret, frame = cap.read()
+        if extract_faces(frame) != ():
+            (x, y, w, h) = extract_faces(frame)[0]
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 20), 2)
+            face = cv2.resize(frame[y:y + h, x:x + w], (50, 50))
+            identified_person = identify_face(face.reshape(1, -1))[0]
             add_attendance(identified_person)
-            cv2.putText(frame,f'{identified_person}',(30,30),cv2.FONT_HERSHEY_SIMPLEX,1,(255, 0, 20),2,cv2.LINE_AA)
-        cv2.imshow('Attendance',frame)
-        if cv2.waitKey(1)==27:
+            cv2.putText(frame, f'{identified_person}', (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 20), 2,
+                        cv2.LINE_AA)
+        cv2.imshow('Attendance', frame)
+        if cv2.waitKey(1) == 27:
             break
     cap.release()
     cv2.destroyAllWindows()
-    names,rolls,times,l = extract_attendance()
+    names, rolls, times, l = extract_attendance()
     return redirect('/')
-
+#### This function will delete data of particular day CSV attendance file
+@app.route('/da', methods=['GET'])
+def remove_attendance_details():
+    delete_attendance()
+    return redirect('/')
+#### This function will delete all student face images
+@app.route('/ds', methods=['GET'])
+def remove_student_images():
+    delete_all_face()
+    return redirect('/')
 #### This function will run when we add a new user
-@app.route('/add',methods=['GET','POST'])
+@app.route('/add', methods=['GET', 'POST'])
 def add():
     newusername = request.form['newusername']
     newuserid = request.form['newuserid']
-    userimagefolder = 'static/faces/'+newusername+'_'+str(newuserid)
+    userimagefolder = 'static/faces/' + newusername + '_' + str(newuserid)
     if not os.path.isdir(userimagefolder):
         os.makedirs(userimagefolder)
     cap = cv2.VideoCapture(0)
-    i,j = 0,0
+    i, j = 0, 0
     while 1:
-        _,frame = cap.read()
+        _, frame = cap.read()
         faces = extract_faces(frame)
-        for (x,y,w,h) in faces:
-            cv2.rectangle(frame,(x, y), (x+w, y+h), (255, 0, 20), 2)
-            cv2.putText(frame,f'Images Captured: {i}/50',(30,30),cv2.FONT_HERSHEY_SIMPLEX,1,(255, 0, 20),2,cv2.LINE_AA)
-            if j%10==0:
-                name = newusername+'_'+str(i)+'.jpg'
-                cv2.imwrite(userimagefolder+'/'+name,frame[y:y+h,x:x+w])
-                i+=1
-            j+=1
-        if j==500:
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 20), 2)
+            cv2.putText(frame, f'Images Captured: {i}/50', (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 20), 2,
+                        cv2.LINE_AA)
+            if j % 10 == 0:
+                name = newusername + '_' + str(i) + '.jpg'
+                cv2.imwrite(userimagefolder + '/' + name, frame[y:y + h, x:x + w])
+                i += 1
+            j += 1
+        if j == 500:
             break
-        cv2.imshow('Adding new User',frame)
-        if cv2.waitKey(1)==27:
+        cv2.imshow('Adding new User', frame)
+        if cv2.waitKey(1) == 27:
             break
     cap.release()
     cv2.destroyAllWindows()
     print('Training Model')
     train_model()
-    names,rolls,times,l = extract_attendance()    
+    names, rolls, times, l = extract_attendance()
     return redirect('/')
+
 
 #### Our main function which runs the Flask App
 if __name__ == '__main__':
